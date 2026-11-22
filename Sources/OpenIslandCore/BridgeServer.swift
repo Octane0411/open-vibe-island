@@ -492,6 +492,15 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleCodexHook(_ payload: CodexHookPayload, from clientID: UUID) {
+        // Codex subagent processes fire their own hooks with agentID set,
+        // using the parent thread's session ID. Suppress them so each
+        // subagent doesn't generate duplicate session updates, permission
+        // prompts, and notifications for the parent session.
+        if payload.agentID != nil {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+
         if CodexInternalSessionFilter.isInternalReview(transcriptPath: payload.transcriptPath) {
             send(.response(.acknowledged), to: clientID)
             return
