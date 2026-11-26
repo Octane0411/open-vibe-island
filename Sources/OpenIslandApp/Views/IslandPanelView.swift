@@ -981,6 +981,30 @@ struct IslandPanelView: View {
             }
         }
 
+        if let snapshot = model.antigravityQuotaSnapshot,
+           snapshot.isEmpty == false {
+            providers.append(
+                UsageProviderPresentation(
+                    id: "antigravity",
+                    title: "Antigravity",
+                    windows: [
+                        UsageWindowPresentation(
+                            id: "agy-prompt",
+                            label: "Pr",
+                            usedPercentage: snapshot.promptUsedPercentage,
+                            resetsAt: nil
+                        ),
+                        UsageWindowPresentation(
+                            id: "agy-flow",
+                            label: "Fl",
+                            usedPercentage: snapshot.flowUsedPercentage,
+                            resetsAt: nil
+                        ),
+                    ]
+                )
+            )
+        }
+
         return providers
     }
 
@@ -1219,6 +1243,8 @@ private struct UsageProviderPresentation: Identifiable {
             "Cl"
         case "codex":
             "Cx"
+        case "antigravity":
+            "AGY"
         default:
             String(title.prefix(2))
         }

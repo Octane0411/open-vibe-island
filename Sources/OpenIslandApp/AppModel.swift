@@ -94,6 +94,7 @@ final class AppModel {
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus? { hooks.claudeStatusLineStatus }
     var claudeUsageSnapshot: ClaudeUsageSnapshot? { hooks.claudeUsageSnapshot }
     var codexUsageSnapshot: CodexUsageSnapshot? { hooks.codexUsageSnapshot }
+    var antigravityQuotaSnapshot: AntigravityQuotaSnapshot? { hooks.antigravityQuotaSnapshot }
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
@@ -1161,6 +1162,8 @@ final class AppModel {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
+            hooks.refreshAntigravityUsageState()
+            hooks.startAntigravityUsageMonitoringIfNeeded()
             updateChecker.startIfNeeded()
 
         } else {
