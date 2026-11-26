@@ -36,6 +36,7 @@ final class HookInstallationCoordinator {
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
+    var antigravityQuotaSnapshot: AntigravityQuotaSnapshot?
     var hooksBinaryURL: URL?
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
@@ -122,6 +123,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var antigravityUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -1028,6 +1032,19 @@ final class HookInstallationCoordinator {
         }
     }
 
+    func refreshAntigravityUsageState() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            let snapshot = await Task.detached(priority: .utility) {
+                await AntigravityUsageLoader.fetchLatestQuota(
+                    from: AntigravityCredentialStore.load()
+                )
+            }.value
+            self.antigravityQuotaSnapshot = snapshot
+        }
+    }
+
     // MARK: - Intent-aware helpers
 
     /// Reports whether the startup flow should auto-install hooks for the
@@ -1482,6 +1499,19 @@ final class HookInstallationCoordinator {
 
             while !Task.isCancelled {
                 self.refreshCodexUsageState()
+                try? await Task.sleep(for: .seconds(120))
+            }
+        }
+    }
+
+    func startAntigravityUsageMonitoringIfNeeded() {
+        guard antigravityUsageMonitorTask == nil else { return }
+
+        antigravityUsageMonitorTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                self.refreshAntigravityUsageState()
                 try? await Task.sleep(for: .seconds(120))
             }
         }

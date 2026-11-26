@@ -240,6 +240,23 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isAntigravityProcess(command: process.command) {
+                let claimKey = "antigravity:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .antigravity,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
             if isZcodeProcess(command: process.command) {
                 // One snapshot for the whole app: every ZCode session lives in
                 // the same Electron process, so per-session liveness is
@@ -882,6 +899,28 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
+    }
+
+    /// Matches the Antigravity CLI entry-point. The standalone install lives
+    /// at `~/.local/bin/agy`; the IDE-managed symlink resolves to a path whose
+    /// last component is `antigravity` (`~/.antigravity/antigravity/bin/…`).
+    /// Binary-name matching avoids incidental paths that merely contain the
+    /// substrings "agy" / "antigravity".
+    private func isAntigravityProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "agy" || binaryName == "antigravity" else {
+            return false
+        }
+
+        return firstToken == "agy"
+            || firstToken.hasSuffix("/agy")
+            || firstToken == "antigravity"
+            || firstToken.hasSuffix("/antigravity")
     }
 
     /// Matches ZCode sessions. ZCode is an Electron desktop app: all sessions

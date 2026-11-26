@@ -106,6 +106,7 @@ struct IslandPanelView: View {
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+    @State private var usagePageIndex = 0
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
 
@@ -368,7 +369,7 @@ struct IslandPanelView: View {
     private var openedHeaderContent: some View {
         if usesNotchAwareOpenedHeader {
             GeometryReader { geometry in
-                let providers = openedUsageProviders
+                let providers = activeUsageProviders
                 let providerGroups = splitUsageProviders(providers)
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
@@ -876,10 +877,12 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private var openedUsageSummary: some View {
-        let providers = openedUsageProviders
+        let providers = activeUsageProviders
 
         if providers.isEmpty == false {
             adaptiveUsageSummaryView(providers)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: cycleUsagePage)
         } else {
             Color.clear
         }
@@ -914,7 +917,39 @@ struct IslandPanelView: View {
         }
     }
 
-    private var openedUsageProviders: [UsageProviderPresentation] {
+    /// Usage chips render one page at a time: the standard page holds the
+    /// Claude/Codex chips in their original two-lane layout, and — when an
+    /// Antigravity quota snapshot exists — a second page holds the AGY chip.
+    /// Clicking the chip row cycles pages.
+    private var usagePages: [[UsageProviderPresentation]] {
+        var pages: [[UsageProviderPresentation]] = []
+        let standard = standardUsageProviders
+        if !standard.isEmpty {
+            pages.append(standard)
+        }
+        if let antigravity = antigravityUsageProvider {
+            pages.append([antigravity])
+        }
+        return pages
+    }
+
+    private var activeUsageProviders: [UsageProviderPresentation] {
+        let pages = usagePages
+        guard !pages.isEmpty else {
+            return []
+        }
+        return pages[min(usagePageIndex, pages.count - 1)]
+    }
+
+    private func cycleUsagePage() {
+        let count = usagePages.count
+        guard count > 1 else {
+            return
+        }
+        usagePageIndex = (usagePageIndex + 1) % count
+    }
+
+    private var standardUsageProviders: [UsageProviderPresentation] {
         guard model.islandUsageDisplay == .compact else {
             return []
         }
@@ -984,6 +1019,33 @@ struct IslandPanelView: View {
         return providers
     }
 
+    private var antigravityUsageProvider: UsageProviderPresentation? {
+        guard model.islandUsageDisplay == .compact,
+              let snapshot = model.antigravityQuotaSnapshot,
+              snapshot.isEmpty == false else {
+            return nil
+        }
+
+        return UsageProviderPresentation(
+            id: "antigravity",
+            title: "Antigravity",
+            windows: [
+                UsageWindowPresentation(
+                    id: "agy-prompt",
+                    label: "Pr",
+                    usedPercentage: snapshot.promptUsedPercentage,
+                    resetsAt: nil
+                ),
+                UsageWindowPresentation(
+                    id: "agy-flow",
+                    label: "Fl",
+                    usedPercentage: snapshot.flowUsedPercentage,
+                    resetsAt: nil
+                ),
+            ]
+        )
+    }
+
     private func splitUsageProviders(
         _ providers: [UsageProviderPresentation]
     ) -> (left: [UsageProviderPresentation], right: [UsageProviderPresentation]) {
@@ -1014,6 +1076,8 @@ struct IslandPanelView: View {
         } else {
             adaptiveUsageSummaryView(providers)
                 .frame(maxWidth: .infinity, alignment: alignment)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: cycleUsagePage)
         }
     }
 
@@ -1219,6 +1283,8 @@ private struct UsageProviderPresentation: Identifiable {
             "Cl"
         case "codex":
             "Cx"
+        case "antigravity":
+            "AGY"
         default:
             String(title.prefix(2))
         }

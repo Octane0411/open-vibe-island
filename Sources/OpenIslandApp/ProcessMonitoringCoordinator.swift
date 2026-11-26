@@ -230,8 +230,12 @@ final class ProcessMonitoringCoordinator {
             existingSessions: mergedClaudeSessions,
             activeProcesses: activeProcesses
         )
-        if mergedSessions != local.sessions {
-            local = SessionState(sessions: mergedSessions)
+        let mergedAntigravitySessions = mergedWithSyntheticAntigravitySessions(
+            existingSessions: mergedSessions,
+            activeProcesses: activeProcesses
+        )
+        if mergedAntigravitySessions != local.sessions {
+            local = SessionState(sessions: mergedAntigravitySessions)
         }
 
         // Adopt process TTYs inline on local copy.
@@ -615,6 +619,20 @@ final class ProcessMonitoringCoordinator {
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
+            }
+        }
+
+        // Antigravity CLI sessions are process-discovered synthetic sessions
+        // with no hook channel (same shape as Kimi's fallback, minus the hook
+        // lifecycle): while any agy process exists, keep non-ended Antigravity
+        // sessions alive. Once the CLI exits, the standard two-poll miss in
+        // SessionState.markProcessLiveness ends the session so it disappears
+        // from the island.
+        let hasAntigravityProcess = activeProcesses.contains { $0.tool == .antigravity }
+        if hasAntigravityProcess {
+            for session in sessions
+            where session.tool == .antigravity && !session.isDemoSession && !session.isSessionEnded {
+                aliveIDs.insert(session.id)
             }
         }
 
@@ -1016,6 +1034,73 @@ final class ProcessMonitoringCoordinator {
             cursorMetadata: CursorSessionMetadata(
                 conversationId: process.sessionID,
                 workspaceRoots: workingDirectory.map { [$0] }
+            )
+        )
+        session.isProcessAlive = true
+        return session
+    }
+
+    // MARK: - Antigravity synthetic sessions
+
+    /// The Antigravity CLI has no hook/bridge channel into Open Island, so
+    /// sessions are synthesized directly from process discovery: every live
+    /// `agy` process that is not already represented by a tracked session
+    /// becomes one synthetic session. Sessions vanish implicitly when the
+    /// process exits (see the liveness fallback in
+    /// `sessionIDsWithAliveProcesses`).
+    func mergedWithSyntheticAntigravitySessions(
+        existingSessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot],
+        now: Date = .now
+    ) -> [AgentSession] {
+        let activeAntigravityProcesses = activeProcesses.filter { $0.tool == .antigravity }
+        guard !activeAntigravityProcesses.isEmpty else {
+            return existingSessions
+        }
+
+        var seenSessionIDs = Set(existingSessions.map(\.id))
+        var syntheticSessions: [AgentSession] = []
+        for process in activeAntigravityProcesses
+            .sorted(by: { processIdentityKey($0) < processIdentityKey($1) }) {
+            let candidateID = "antigravity-process:\(processIdentityKey(process))"
+            guard seenSessionIDs.insert(candidateID).inserted else {
+                continue
+            }
+
+            syntheticSessions.append(syntheticAntigravitySession(for: process, sessionID: candidateID, now: now))
+        }
+
+        return existingSessions + syntheticSessions
+    }
+
+    private func syntheticAntigravitySession(
+        for process: ActiveProcessSnapshot,
+        sessionID: String,
+        now: Date
+    ) -> AgentSession {
+        let workingDirectory = process.workingDirectory
+        let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? "Workspace"
+        let terminalApp = supportedTerminalApp(for: process.terminalApp)
+            ?? process.terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "Unknown"
+
+        var session = AgentSession(
+            id: sessionID,
+            title: "Antigravity · \(workspaceName)",
+            tool: .antigravity,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Antigravity CLI detected from \(terminalApp).",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspaceName,
+                paneTitle: "Antigravity \(sessionID.prefix(8))",
+                workingDirectory: workingDirectory,
+                terminalTTY: process.terminalTTY,
+                tmuxTarget: process.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath
             )
         )
         session.isProcessAlive = true
@@ -1658,6 +1743,8 @@ final class ProcessMonitoringCoordinator {
             return "ZCode \(session.id.prefix(8))"
         case .hermes:
             return "Hermes \(session.id.prefix(8))"
+        case .antigravity:
+            return "Antigravity \(session.id.prefix(8))"
         }
     }
 }
